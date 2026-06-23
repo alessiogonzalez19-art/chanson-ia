@@ -19,6 +19,7 @@ import os
 import json
 import datetime
 import threading
+import socketio
 
 from config import config
 
@@ -31,11 +32,58 @@ from models.manager import WorldClassModelManager
 from utils.log_watcher import LogWatcher
 import asyncio
 
+# Socket.io setup for real-time collaboration
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = FastAPI(
     title="Studio IA Local et Autonome",
     description="World-class AI music production studio with 10 specialized agents",
-    version="2.0.0"
+    version="2.1.0"
 )
+sio_app = socketio.ASGIApp(sio, app)
+
+# Global mixer state for synchronization
+_mixer_projects = {} # project_id -> { tracks: {}, faders: {}, pans: {} }
+
+@sio.event
+async def connect(sid, environ):
+    logger.info(f"🤝 Client connecté aux WebSockets: {sid}")
+
+@sio.event
+async def join_project(sid, project_id):
+    await sio.enter_room(sid, project_id)
+    logger.info(f"👥 Client {sid} a rejoint le projet {project_id}")
+    # Envoyer l'état actuel du projet au nouvel arrivant
+    if project_id in _mixer_projects:
+        await sio.emit('sync_state', _mixer_projects[project_id], room=sid)
+
+@sio.event
+async def update_fader(sid, data):
+    project_id = data.get('project_id')
+    track = data.get('track')
+    value = data.get('value')
+    
+    if project_id not in _mixer_projects:
+        _mixer_projects[project_id] = {"faders": {}, "pans": {}}
+    
+    _mixer_projects[project_id]["faders"][track] = value
+    # Diffuser à tous les autres clients du projet
+    await sio.emit('fader_moved', {"track": track, "value": value}, room=project_id, skip_sid=sid)
+
+@sio.event
+async def update_pan(sid, data):
+    project_id = data.get('project_id')
+    track = data.get('track')
+    value = data.get('value')
+    
+    if project_id not in _mixer_projects:
+        _mixer_projects[project_id] = {"faders": {}, "pans": {}}
+    
+    _mixer_projects[project_id]["pans"][track] = value
+    await sio.emit('pan_moved', {"track": track, "value": value}, room=project_id, skip_sid=sid)
+
+@sio.event
+async def disconnect(sid):
+    logger.info(f"👋 Client déconnecté: {sid}")
 
 # CORS
 app.add_middleware(
@@ -1686,4 +1734,21 @@ async def api_audio_rvc(audio_path: str = Form(...), voice_model: str = Form(...
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/library")
+async def api_get_library():
+    from utils.library import LibraryManager
+    return {"tracks": LibraryManager().get_all_tracks()}
+
+@app.get("/api/library/search")
+async def api_smart_search(q: str):
+    from utils.library import LibraryManager
+    from models.manager import WorldClassModelManager
+    
+    manager = WorldClassModelManager()
+    llm = await manager.load_orchestrator()
+    
+    library = LibraryManager()
+    results = await library.smart_search(q, llm)
+    return {"results": results}
 

@@ -32,7 +32,7 @@ class LibraryManager:
         with open(self.metadata_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
-    def add_track(self, filename: str, source: str, genre: str, bpm: Optional[int] = None, duration: Optional[float] = None) -> Dict:
+    def add_track(self, filename: str, source: str, genre: str, bpm: Optional[int] = None, duration: Optional[float] = None, description: str = "") -> Dict:
         metadata = self._load_metadata()
         track_info = {
             "id": filename,
@@ -41,6 +41,7 @@ class LibraryManager:
             "genre": genre,
             "bpm": bpm,
             "duration": duration,
+            "description": description, # Description sonore pour recherche sémantique
             "url": f"/api/library/stream/{filename}"
         }
         
@@ -75,3 +76,42 @@ class LibraryManager:
                 file_path.unlink()
             return True
         return False
+
+    async def smart_search(self, query: str, llm) -> List[Dict]:
+        """
+        Recherche sémantique en utilisant un LLM pour matcher la requête 
+        avec les descriptions sonores des fichiers.
+        """
+        metadata = self._load_metadata()
+        if not metadata:
+            return []
+            
+        # Préparer le contexte pour le LLM
+        library_context = "\n".join([
+            f"- {t['filename']}: {t.get('description', 'Pas de description')} (Genre: {t['genre']}, BPM: {t.get('bpm', 'N/A')})"
+            for t in metadata
+        ])
+        
+        prompt = f"""
+        L'utilisateur cherche un son dans sa bibliothèque avec la requête : "{query}"
+        
+        Voici la liste des fichiers disponibles :
+        {library_context}
+        
+        Identifie les 3 fichiers les plus pertinents. 
+        Réponds UNIQUEMENT avec une liste JSON des noms de fichiers, par exemple : ["kick_berlin.wav", "dark_bass.wav"]
+        """
+        
+        try:
+            response = await llm.generate(prompt, system_prompt="Tu es un expert en recherche de samples musicaux.")
+            # Extraire le JSON de la réponse
+            import re
+            match = re.search(r'\[.*\]', response, re.DOTALL)
+            if match:
+                filenames = json.loads(match.group())
+                return [t for t in metadata if t['filename'] in filenames]
+        except Exception as e:
+            logger.error(f"Smart Search error: {e}")
+            
+        # Fallback sur recherche textuelle classique
+        return [t for t in metadata if query.lower() in t['filename'].lower() or query.lower() in t.get('description', '').lower()]

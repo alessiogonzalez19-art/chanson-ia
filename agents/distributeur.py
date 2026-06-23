@@ -49,12 +49,30 @@ class Distributeur(StudioAgent):
             
             logger.info(f"🎧 Track packagée pour la distribution: {final_path}")
 
-            # 2. Simulation de l'ajout de métadonnées ID3 et cover art
-            # Ici on utiliserait 'mutagen' pour modifier le MP3/FLAC
-            
+            # 2. Génération de la pochette d'album (Cover Art) via IA
+            cover_path = None
+            if self.model_manager:
+                logger.info("🎨 Génération de la pochette d'album...")
+                try:
+                    # On utiliserait un modèle de génération d'image ici
+                    # prompt = f"Album cover for a song titled '{title}' by '{artist}', high quality, professional music art"
+                    # cover_path = await self.model_manager.generate_image(prompt)
+                    pass
+                except Exception as e:
+                    logger.warning(f"Erreur génération cover: {e}")
+
+            # 3. Rédaction du post marketing
+            marketing_copy = ""
+            if self.model_manager:
+                llm = await self.model_manager.load_orchestrator()
+                prompt = f"Rédige un post Instagram/TikTok captivant pour la sortie du morceau '{title}' de l'artiste '{artist}'. Utilise des emojis et des hashtags pertinents."
+                marketing_copy = await llm.generate(prompt)
+
             task.output_data = {
                 "message": "Track packagée avec succès pour la distribution.",
                 "release_path": str(final_path),
+                "cover_path": str(cover_path) if cover_path else None,
+                "marketing_copy": marketing_copy,
                 "metadata": {
                     "title": title,
                     "artist": artist

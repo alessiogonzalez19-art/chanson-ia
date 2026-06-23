@@ -17,6 +17,45 @@
                 fontFamily: { sans: ['Inter','sans-serif'], display: ['Outfit','sans-serif'], mono: ['JetBrains Mono','monospace'] }
             }}
         }
+
+        // WebSocket Collaboration
+        const socket = io();
+        const currentProjectId = "default-project";
+
+        socket.on('connect', () => {
+            console.log("🤝 Connecté au serveur de collaboration");
+            socket.emit('join_project', currentProjectId);
+        });
+
+        socket.on('fader_moved', (data) => {
+            if (window.mixer) {
+                window.mixer.setVolume(data.track, data.value);
+                const fader = document.getElementById(`fader-${data.track}`);
+                if (fader) fader.value = data.value;
+                const label = document.getElementById(`vol-label-${data.track}`);
+                if (label) label.textContent = `${data.value > 0 ? '+' : ''}${parseFloat(data.value).toFixed(1)}dB`;
+            }
+        });
+
+        socket.on('pan_moved', (data) => {
+            if (window.mixer) {
+                window.mixer.setPan(data.track, data.value);
+                drawPanKnob(data.track, data.value);
+            }
+        });
+
+        socket.on('sync_state', (state) => {
+            console.log("🔄 Synchronisation de l'état du mixage", state);
+            if (state.faders) {
+                Object.entries(state.faders).forEach(([track, val]) => {
+                    if (window.mixer) {
+                        window.mixer.setVolume(parseInt(track), val);
+                        const f = document.getElementById(`fader-${track}`);
+                        if (f) f.value = val;
+                    }
+                });
+            }
+        });
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@500;600;700&family=JetBrains+Mono&display=swap');
@@ -225,7 +264,10 @@
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-display font-bold">Bibliothèque</h2>
                     <div class="flex gap-3 items-center">
-                        <input type="text" id="library-search" placeholder="Rechercher..." class="glass-light px-3 py-2 rounded-lg text-sm border border-border focus:outline-none focus:border-primary/50 w-48" oninput="filterLibrary(this.value)">
+                        <div class="relative">
+                            <input type="text" id="library-search" placeholder="Rechercher sémantiquement..." class="glass-light px-3 py-2 rounded-lg text-sm border border-border focus:outline-none focus:border-primary/50 w-64 pr-10" oninput="filterLibrary(this.value)">
+                            <button onclick="performSmartSearch()" class="absolute right-2 top-1.5 text-lg" title="Smart Search 🧠">🧠</button>
+                        </div>
                         <button onclick="renderLibrary()" class="btn-gradient px-4 py-2 rounded-lg text-sm">🔄 Rafraîchir</button>
                     </div>
                 </div>
@@ -850,8 +892,13 @@ function updateTransportPos(pos) {
 }
 
 function onFaderChange(slot, val) {
-    document.getElementById(`vol-label-${slot}`).textContent = `${parseFloat(val) >= 0 ? '+' : ''}${parseFloat(val).toFixed(0)}dB`;
-    if (mixer) mixer.setVolume(slot, parseFloat(val));
+    const value = parseFloat(val);
+    document.getElementById(`vol-label-${slot}`).textContent = `${value >= 0 ? '+' : ''}${value.toFixed(0)}dB`;
+    if (mixer) {
+        mixer.setVolume(slot, value);
+        // Envoyer via WebSocket
+        socket.emit('update_fader', { project_id: currentProjectId, track: slot, value: value });
+    }
 }
 
 function onMasterFader(val) {
@@ -1075,7 +1122,23 @@ function renderLibraryTracks(tracks) {
 function filterLibrary(query) {
     if (!query) { renderLibraryTracks(allLibraryTracks); return; }
     const q = query.toLowerCase();
-    renderLibraryTracks(allLibraryTracks.filter(t => t.filename.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q)));
+    renderLibraryTracks(allLibraryTracks.filter(t => t.filename.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q)));
+}
+
+async function performSmartSearch() {
+    const query = document.getElementById('library-search').value.trim();
+    if (!query) return;
+    
+    const grid = document.getElementById('library-grid');
+    grid.innerHTML = '<div class="text-primary text-sm col-span-3 flex items-center gap-2"><span class="animate-spin">🧠</span> L\'IA analyse votre bibliothèque...</div>';
+    
+    try {
+        const res = await fetch(`/api/library/search?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        renderLibraryTracks(data.results || []);
+    } catch(e) {
+        grid.innerHTML = '<div class="text-red-400 text-sm">Erreur Smart Search</div>';
+    }
 }
 
 async function addToMixer(filename) {
