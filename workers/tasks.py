@@ -319,6 +319,28 @@ def auto_remix_task(self, prompt: str, audio_path: str) -> Dict:
             ],
         }
 
+        return asyncio.run(_run())
+
+
+@celery_app.task(bind=True, name="clean_vocal_macro", autoretry_for=(Exception,), max_retries=2, default_retry_delay=5)
+def clean_vocal_macro(self, audio_path: str) -> Dict:
+    """Macro: Clean and polish vocal (De-noise, De-esser, Compression, EQ)"""
+    async def _run():
+        from agents.expert_vocal import ExpertVocal
+        expert = ExpertVocal()
+        
+        output_dir = config.temp_folder / "macros"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"cleaned_{Path(audio_path).name}"
+        
+        # Chain basique de nettoyage
+        result = await expert.studio_vocal_chain(
+            Path(audio_path),
+            autotune_strength=0.0, # Pas d'autotune pour un simple nettoyage
+            output_path=output_path
+        )
+        return {"status": "success", "output_path": str(output_path), "message": "Voix nettoyée avec succès"}
+
     return asyncio.run(_run())
 
 

@@ -23,11 +23,19 @@
         *, *::before, *::after { box-sizing: border-box; }
         body { background: #080808; color: #f1f1f1; font-family: 'Inter', sans-serif; background-image: radial-gradient(circle at 15% 50%, rgba(139,92,246,0.07), transparent 30%), radial-gradient(circle at 85% 20%, rgba(6,182,212,0.07), transparent 30%); background-attachment: fixed; overflow: hidden; }
         h1,h2,h3,.font-display { font-family: 'Outfit', sans-serif; }
-        .glass { background: rgba(18,18,22,0.6); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
-        .glass-light { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
-        .btn-gradient { background: linear-gradient(135deg,#8B5CF6,#06B6D4); transition: all .2s ease; }
+        .glass { background: rgba(10,10,15,0.7); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 32px 0 rgba(0,0,0,0.8); }
+        .glass-light { background: rgba(255,255,255,0.03); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.05); }
+        .btn-gradient { background: linear-gradient(135deg,#8B5CF6,#06B6D4); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); position: relative; overflow: hidden; }
+        .btn-gradient::after { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); transition: 0.5s; }
+        .btn-gradient:hover::after { left: 100%; }
+        .view-section { transition: opacity 0.4s ease, transform 0.4s ease; }
+        .view-section.hidden { display: none; opacity: 0; transform: translateY(10px); }
+        .nav-btn { position: relative; transition: all 0.3s ease; }
+        .nav-btn::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 0; height: 70%; background: #8B5CF6; transition: all 0.3s ease; border-radius: 0 4px 4px 0; }
+        .nav-btn.active::before { width: 4px; }
+        .nav-btn.active { background: rgba(139,92,246,0.1); color: white; padding-left: 1.25rem; }
         .btn-gradient:hover { opacity:.9; transform:translateY(-1px); box-shadow:0 4px 20px rgba(139,92,246,.3); }
-        .nav-btn.active { background: rgba(139,92,246,0.15); border-left: 2px solid #8B5CF6; color: white; }
+
         @keyframes pulse-mic { 0%{box-shadow:0 0 0 0 rgba(239,68,68,.7)} 70%{box-shadow:0 0 0 10px rgba(239,68,68,0)} 100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} }
         .mic-active { animation: pulse-mic 1.5s infinite; color:#ef4444 !important; }
         @keyframes spin-slow { to { transform: rotate(360deg); } }

@@ -156,6 +156,14 @@ class WorldClassModelManager:
         # Orchestrator LLM is large, unload if needed
         if self.vram_manager.get_available_vram_gb() < 12:
             await self.unload_model("orchestrator")
+
+    async def force_unload_all(self, except_model: Optional[str] = None):
+        """Unload all models to maximize VRAM for a specific task"""
+        logger.info(f"🚨 Force unloading all models (except {except_model})")
+        for key in list(self.loaded_models.keys()):
+            if key != except_model:
+                await self.unload_model(key)
+        self.vram_manager.optimize_memory()
     
     def get_status(self) -> Dict:
         """Get current model loading status"""
