@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CUDA-compatible PyTorch (adjust CUDA version as needed)
+RUN pip install --no-cache-dir torch==2.4.0 torchaudio==2.4.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+WORKDIR /app
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project source
+COPY . .
+
+# Create workspace directories
+RUN mkdir -p \
+    /workspace/FL_Studio_Ingestion \
+    /workspace/FL_Studio_Output \
+    /app/models_cache \
+    /app/temp_processing \
+    /app/studio_workspace
+
+# Expose API port
+EXPOSE 8000
+
+# Environment variables with defaults
+ENV STUDIO_WORKSPACE=/workspace \
+    FL_WATCH_FOLDER=/workspace/FL_Studio_Ingestion \
+    FL_OUTPUT_FOLDER=/workspace/FL_Studio_Output \
+    MODELS_CACHE=/app/models_cache \
+    STUDIO_TEMP=/app/temp_processing \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000
+
+# Start FastAPI with uvicorn
+CMD ["uvicorn", "api.routes:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

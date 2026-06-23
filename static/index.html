@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio IA</title>
+    <meta name="description" content="Studio IA — Production musicale autonome avec 17 agents spécialisés">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    <script src="/static/js/mixer-engine.js" defer></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: {
+                colors: { dark: '#080808', surface: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)', primary: '#8B5CF6', secondary: '#06B6D4' },
+                fontFamily: { sans: ['Inter','sans-serif'], display: ['Outfit','sans-serif'], mono: ['JetBrains Mono','monospace'] }
+            }}
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@500;600;700&family=JetBrains+Mono&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
+        body { background: #080808; color: #f1f1f1; font-family: 'Inter', sans-serif; background-image: radial-gradient(circle at 15% 50%, rgba(139,92,246,0.07), transparent 30%), radial-gradient(circle at 85% 20%, rgba(6,182,212,0.07), transparent 30%); background-attachment: fixed; overflow: hidden; }
+        h1,h2,h3,.font-display { font-family: 'Outfit', sans-serif; }
+        .glass { background: rgba(18,18,22,0.6); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); }
+        .glass-light { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
+        .btn-gradient { background: linear-gradient(135deg,#8B5CF6,#06B6D4); transition: all .2s ease; }
+        .btn-gradient:hover { opacity:.9; transform:translateY(-1px); box-shadow:0 4px 20px rgba(139,92,246,.3); }
+        .nav-btn.active { background: rgba(139,92,246,0.15); border-left: 2px solid #8B5CF6; color: white; }
+        @keyframes pulse-mic { 0%{box-shadow:0 0 0 0 rgba(239,68,68,.7)} 70%{box-shadow:0 0 0 10px rgba(239,68,68,0)} 100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} }
+        .mic-active { animation: pulse-mic 1.5s infinite; color:#ef4444 !important; }
+        @keyframes spin-slow { to { transform: rotate(360deg); } }
+        .animate-spin-slow { animation: spin-slow 3s linear infinite; }
+        ::-webkit-scrollbar { width:5px; height:5px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.15); border-radius:4px; }
+        .chat-bubble-user { background:rgba(139,92,246,.2); border:1px solid rgba(139,92,246,.3); border-radius:18px 18px 0 18px; }
+        .chat-bubble-ai { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:18px 18px 18px 0; }
+        /* === MIXER STYLES === */
+        .fader-wrap { display:flex; flex-direction:column; align-items:center; gap:4px; }
+        input[type=range].fader { -webkit-appearance:none; appearance:none; writing-mode:vertical-lr; direction:rtl; width:6px; height:120px; border-radius:4px; background:linear-gradient(to top,#8B5CF6,rgba(255,255,255,0.1)); cursor:pointer; }
+        input[type=range].fader::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:10px; border-radius:3px; background:#fff; cursor:grab; }
+        input[type=range].knob { -webkit-appearance:none; appearance:none; width:40px; height:40px; border-radius:50%; background:conic-gradient(from 135deg, #8B5CF6 0%, #06B6D4 50%, transparent 50%); cursor:pointer; }
+        .channel-strip { display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 6px; border-right:1px solid rgba(255,255,255,.06); min-width:70px; }
+        .channel-strip:last-child { border-right:none; }
+        .vu-canvas { display:block; }
+        .timeline-grid { background-size:50px 100%; background-image:linear-gradient(to right,rgba(255,255,255,.04) 1px,transparent 1px); }
+        .audio-clip { background:linear-gradient(90deg,rgba(139,92,246,.7),rgba(6,182,212,.7)); border-radius:4px; position:absolute; height:80%; top:10%; cursor:grab; display:flex; align-items:center; padding:0 8px; font-size:11px; white-space:nowrap; overflow:hidden; }
+        .playhead { position:absolute; top:0; bottom:0; width:2px; background:#8B5CF6; pointer-events:none; box-shadow:0 0 8px rgba(139,92,246,.6); z-index:10; }
+        /* AI Mini Chat */
+        #ai-mini-chat { position:fixed; bottom:24px; right:24px; width:320px; z-index:9999; transition:all .3s ease; }
+        #ai-mini-chat.collapsed { width:56px; height:56px; border-radius:50%; overflow:hidden; }
+        #ai-mini-chat.collapsed #chat-body { display:none; }
+        #ai-mini-chat.collapsed #chat-header { border-radius:50%; padding:12px; justify-content:center; }
+        /* Task queue */
+        .task-bar { height:6px; border-radius:4px; background:rgba(255,255,255,.1); overflow:hidden; }
+        .task-bar-fill { height:100%; border-radius:4px; transition:width .5s ease; }
+        /* Drawflow */
+        .drawflow .drawflow-node { background:#1a1a2e; border:1px solid #2d2d44; color:white; border-radius:12px; min-width:120px; }
+        .drawflow .drawflow-node .title-box { background:rgba(139,92,246,.2); border-bottom:1px solid #2d2d44; font-size:12px; padding:6px 10px; }
+        .drawflow .connection .main-path { stroke:#8B5CF6; stroke-width:2px; }
+        .drawflow { background:#0d0d14 !important; }
+        /* System */
+        .stat-ring { border-radius:50%; border:3px solid rgba(255,255,255,.1); }
+        /* Mastering */
+        .lufs-btn { padding:6px 14px; border-radius:8px; font-size:12px; border:1px solid rgba(255,255,255,.1); cursor:pointer; transition:all .2s; }
+        .lufs-btn.selected { background:rgba(139,92,246,.3); border-color:#8B5CF6; }
+        /* Modal */
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:9998; display:flex; align-items:center; justify-content:center; backdrop-filter:blur(4px); }
+        .modal-box { background:#141420; border:1px solid rgba(255,255,255,.1); border-radius:20px; padding:32px; max-width:500px; width:90%; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+<!-- SIDEBAR -->
+<aside class="w-60 glass flex flex-col border-r border-border z-10 relative shrink-0">
+    <div class="p-5 border-b border-border">
+        <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Studio IA</h1>
+        <p class="text-xs text-gray-500 mt-0.5">17 Agents · Production IA</p>
+    </div>
+    <nav class="flex-1 px-3 py-3 space-y-1 overflow-y-auto">
+        <button onclick="switchTab('chat')" id="nav-chat" class="nav-btn active w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">💬</span> Chat & Production
+        </button>
+        <button onclick="switchTab('mixer')" id="nav-mixer" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">🎚️</span> Studio Mixer
+        </button>
+        <button onclick="switchTab('library')" id="nav-library" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">📚</span> Bibliothèque
+        </button>
+        <button onclick="switchTab('mastering')" id="nav-mastering" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">🎯</span> Mastering
+        </button>
+        <button onclick="switchTab('sequencer')" id="nav-sequencer" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">🎛️</span> Séquenceur
+        </button>
+        <button onclick="switchTab('workflow')" id="nav-workflow" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">🕸️</span> Workflow Builder
+        </button>
+        <button onclick="switchTab('agents')" id="nav-agents" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">🤖</span> Agents Live
+        </button>
+        <button onclick="switchTab('tasks')" id="nav-tasks" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">📋</span> File de tâches
+        </button>
+        <button onclick="switchTab('macros')" id="nav-macros" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">⚡</span> Macro Board
+        </button>
+        <button onclick="switchTab('system')" id="nav-system" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left text-sm text-gray-300 hover:text-white hover:bg-white/5">
+            <span class="text-base">⚙️</span> Système
+        </button>
+    </nav>
+    <div class="p-3 border-t border-border">
+        <div class="glass-light p-3 rounded-xl flex items-center gap-3">
+            <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0"></div>
+            <div class="text-xs overflow-hidden">
+                <p class="font-medium truncate">Gardien (Agent 11)</p>
+                <p class="text-gray-400">Système sain</p>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<main class="flex-1 flex flex-col overflow-hidden">
+    <header class="h-14 border-b border-border glass flex items-center justify-between px-6 z-10 relative shrink-0">
+        <h2 id="page-title" class="text-base font-medium font-display">Chat & Production</h2>
+        <div class="flex items-center gap-3">
+            <div id="task-status" class="text-sm text-gray-400">Prêt</div>
+        </div>
+    </header>
+
+    <div class="flex-1 overflow-hidden relative">
+
+        <!-- ═══════════════════ CHAT VIEW ═══════════════════ -->
+        <div id="view-chat" class="view-section absolute inset-0 flex flex-col p-6 max-w-4xl mx-auto w-full">
+            <div id="chat-history" class="flex-1 overflow-y-auto space-y-4 pb-4 pr-2">
+                <div class="chat-bubble-ai p-4 max-w-[85%] text-sm">
+                    <p class="font-medium text-primary text-xs mb-2">Chef Suprême (Agent 13)</p>
+                    <p>Salut ! Je suis ton producteur IA. Envoie-moi un fichier audio ou décris ton projet — je t'analyserai tout en détail, puis on construira <strong>ensemble</strong> un plan de production avant de lancer quoi que ce soit. 🎵</p>
+                    <p class="mt-2 text-xs text-gray-400">Commandes : <code class="bg-white/10 px-1 rounded">fais le plan</code> · <code class="bg-white/10 px-1 rounded">go</code> · <code class="bg-white/10 px-1 rounded">analyse tout</code></p>
+                </div>
+            </div>
+            <!-- Current plan badge -->
+            <div id="plan-badge" class="hidden mb-3 glass-light rounded-xl p-3 flex items-center justify-between text-xs">
+                <span class="text-primary font-medium">📋 Plan actif</span>
+                <div id="plan-steps-count" class="text-gray-400"></div>
+                <button onclick="showCurrentPlan()" class="text-primary hover:underline">Voir le plan</button>
+            </div>
+            <div class="mt-auto pt-2">
+                <div class="glass rounded-2xl p-2 flex items-end gap-2">
+                    <input type="file" id="file-upload" class="hidden" accept="audio/*" onchange="handleFileUpload(event)">
+                    <button onclick="document.getElementById('file-upload').click()" class="p-2.5 text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors shrink-0" title="Upload fichier">📎</button>
+                    <button id="mic-btn" onclick="toggleSpeech()" class="p-2.5 text-gray-400 hover:text-white rounded-xl hover:bg-white/5 transition-colors shrink-0" title="Parler">🎙️</button>
+                    <textarea id="chat-input" rows="1" class="w-full bg-transparent border-none outline-none resize-none py-2.5 px-2 text-sm text-gray-200 placeholder-gray-500" placeholder="Parle-moi de ton projet, envoie un son, ou dicte une instruction..."></textarea>
+                    <button onclick="sendChat()" class="btn-gradient px-4 py-2.5 rounded-xl text-sm font-medium shrink-0">Envoyer</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ MIXER VIEW ═══════════════════ -->
+        <div id="view-mixer" class="view-section hidden absolute inset-0 flex flex-col overflow-hidden p-4">
+            <!-- Transport Bar -->
+            <div class="glass rounded-xl p-3 mb-3 flex items-center gap-4 shrink-0">
+                <div class="flex items-center gap-2">
+                    <button onclick="mixerPlay()" id="btn-play" class="w-9 h-9 rounded-lg glass-light flex items-center justify-center hover:bg-white/10 transition-colors text-base">▶</button>
+                    <button onclick="mixerPause()" class="w-9 h-9 rounded-lg glass-light flex items-center justify-center hover:bg-white/10 transition-colors text-base">⏸</button>
+                    <button onclick="mixerStop()" class="w-9 h-9 rounded-lg glass-light flex items-center justify-center hover:bg-white/10 transition-colors text-base">⏹</button>
+                    <button onclick="toggleLoop()" id="btn-loop" class="w-9 h-9 rounded-lg glass-light flex items-center justify-center hover:bg-white/10 transition-colors text-base opacity-50">🔁</button>
+                </div>
+                <div class="h-6 w-px bg-border"></div>
+                <div class="flex items-center gap-2 text-sm">
+                    <span class="text-gray-400">BPM</span>
+                    <input type="number" id="bpm-input" value="120" min="60" max="240" class="w-16 bg-white/5 border border-border rounded-lg px-2 py-1 text-center text-sm" onchange="updateBPM(this.value)">
+                </div>
+                <div class="flex items-center gap-2 text-sm font-mono">
+                    <span class="text-gray-400">POS</span>
+                    <span id="transport-pos" class="text-primary">0:00.000</span>
+                </div>
+                <div class="flex-1"></div>
+                <button onclick="openAddTrackModal()" class="glass-light px-3 py-1.5 rounded-lg text-xs hover:bg-white/10 transition flex items-center gap-1.5">
+                    <span>+</span> Ajouter piste
+                </button>
+                <button onclick="aiAutoMix()" class="btn-gradient px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5">
+                    ✨ Auto-Mix IA
+                </button>
+                <button onclick="exportMix()" class="glass-light px-3 py-1.5 rounded-lg text-xs hover:bg-white/10">
+                    ⬇ Export WAV
+                </button>
+            </div>
+
+            <!-- Timeline / Waveform -->
+            <div class="glass rounded-xl mb-3 overflow-hidden shrink-0" style="height:160px">
+                <div class="flex h-full">
+                    <div class="w-32 border-r border-border shrink-0 bg-white/5 flex flex-col justify-center px-3">
+                        <span class="text-xs text-gray-400">Timeline</span>
+                    </div>
+                    <div class="flex-1 relative overflow-x-auto" id="timeline-container">
+                        <div id="timeline-tracks" class="absolute inset-0 timeline-grid">
+                            <div id="playhead-bar" class="playhead" style="left:0%"></div>
+                            <!-- Track waveforms injected here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mixer Console -->
+            <div class="glass rounded-xl flex-1 overflow-x-auto overflow-y-hidden">
+                <div class="flex h-full min-w-max p-2" id="mixer-console">
+                    <!-- Channels 1-8 + Master injected by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ LIBRARY VIEW ═══════════════════ -->
+        <div id="view-library" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-6xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-display font-bold">Bibliothèque</h2>
+                    <div class="flex gap-3 items-center">
+                        <input type="text" id="library-search" placeholder="Rechercher..." class="glass-light px-3 py-2 rounded-lg text-sm border border-border focus:outline-none focus:border-primary/50 w-48" oninput="filterLibrary(this.value)">
+                        <button onclick="renderLibrary()" class="btn-gradient px-4 py-2 rounded-lg text-sm">🔄 Rafraîchir</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="library-grid">
+                    <div class="text-gray-400 text-sm col-span-3">Chargement...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ MASTERING VIEW ═══════════════════ -->
+        <div id="view-mastering" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-3xl mx-auto">
+                <h2 class="text-2xl font-display font-bold mb-6">Mastering Professionnel</h2>
+                <div class="glass rounded-2xl p-6 mb-5">
+                    <h3 class="font-medium mb-4 text-sm text-gray-300">1. Source audio</h3>
+                    <div class="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 transition-colors" onclick="document.getElementById('mastering-upload').click()" id="mastering-drop">
+                        <input type="file" id="mastering-upload" class="hidden" accept="audio/*" onchange="handleMasteringUpload(event)">
+                        <p class="text-gray-400 text-sm">Glissez votre fichier ici ou cliquez</p>
+                        <p id="mastering-file-name" class="text-primary mt-2 text-sm font-medium"></p>
+                    </div>
+                </div>
+                <div class="glass rounded-2xl p-6 mb-5">
+                    <h3 class="font-medium mb-4 text-sm text-gray-300">2. Cible LUFS</h3>
+                    <div class="flex gap-3 flex-wrap">
+                        <button class="lufs-btn selected" onclick="selectLUFS(this,-14)">YouTube / Spotify<br><span class="text-primary font-bold">-14 LUFS</span></button>
+                        <button class="lufs-btn" onclick="selectLUFS(this,-16)">Apple Music<br><span class="text-secondary font-bold">-16 LUFS</span></button>
+                        <button class="lufs-btn" onclick="selectLUFS(this,-23)">TV / Broadcast<br><span class="font-bold">-23 LUFS</span></button>
+                        <button class="lufs-btn" onclick="selectLUFS(this,-9)">Club / Max impact<br><span class="text-red-400 font-bold">-9 LUFS</span></button>
+                    </div>
+                </div>
+                <div class="glass rounded-2xl p-6 mb-5">
+                    <h3 class="font-medium mb-4 text-sm text-gray-300">3. Options créatives</h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-warmth" checked class="w-4 h-4 accent-purple-500"> <span class="text-sm">Chaleur vintage</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-vocal" checked class="w-4 h-4 accent-purple-500"> <span class="text-sm">Amélioration vocale</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-stereo" class="w-4 h-4 accent-purple-500"> <span class="text-sm">Largeur stéréo ×1.3</span>
+                        </label>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="opt-creative" class="w-4 h-4 accent-purple-500"> <span class="text-sm">Mode créatif</span>
+                        </label>
+                    </div>
+                </div>
+                <button onclick="launchMastering()" class="btn-gradient w-full py-4 rounded-xl font-medium text-base">
+                    🎯 Lancer le Mastering
+                </button>
+                <div id="mastering-result" class="mt-4 hidden glass-light rounded-xl p-4 text-sm"></div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ SEQUENCER VIEW ═══════════════════ -->
+        <div id="view-sequencer" class="view-section hidden absolute inset-0 flex flex-col p-6">
+            <h2 class="text-2xl font-display font-bold mb-4 shrink-0">Séquenceur Multi-Pistes</h2>
+            <div class="glass flex-1 rounded-2xl overflow-hidden flex flex-col">
+                <div class="h-8 border-b border-border flex bg-white/5 shrink-0">
+                    <div class="w-32 border-r border-border shrink-0"></div>
+                    <div class="flex-1 timeline-grid"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                    <div class="h-24 border-b border-border flex group">
+                        <div class="w-32 border-r border-border shrink-0 bg-white/5 flex flex-col justify-center px-3 gap-1">
+                            <span class="text-xs font-medium">Vocals</span>
+                            <div class="flex gap-1">
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-white/20">M</button>
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-yellow-500/30 hover:text-yellow-400">S</button>
+                            </div>
+                        </div>
+                        <div class="flex-1 relative timeline-grid">
+                            <div class="audio-clip" style="width:220px;left:30px">Vocal_Stem.wav</div>
+                        </div>
+                    </div>
+                    <div class="h-24 border-b border-border flex group">
+                        <div class="w-32 border-r border-border shrink-0 bg-white/5 flex flex-col justify-center px-3 gap-1">
+                            <span class="text-xs font-medium">Drums</span>
+                            <div class="flex gap-1">
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-white/20">M</button>
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-yellow-500/30 hover:text-yellow-400">S</button>
+                            </div>
+                        </div>
+                        <div class="flex-1 relative timeline-grid">
+                            <div class="audio-clip" style="width:160px;left:0">Drum_Loop.wav</div>
+                        </div>
+                    </div>
+                    <div class="h-24 border-b border-border flex group">
+                        <div class="w-32 border-r border-border shrink-0 bg-white/5 flex flex-col justify-center px-3 gap-1">
+                            <span class="text-xs font-medium">MIDI Synth</span>
+                            <div class="flex gap-1">
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-white/20">M</button>
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-yellow-500/30 hover:text-yellow-400">S</button>
+                            </div>
+                        </div>
+                        <div class="flex-1 relative timeline-grid">
+                            <div class="audio-clip !bg-primary/70" style="width:300px;left:50px">Synth_MIDI.mid</div>
+                        </div>
+                    </div>
+                    <div class="h-24 border-b border-border flex group">
+                        <div class="w-32 border-r border-border shrink-0 bg-white/5 flex flex-col justify-center px-3 gap-1">
+                            <span class="text-xs font-medium">Bass</span>
+                            <div class="flex gap-1">
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-white/20">M</button>
+                                <button class="text-[10px] bg-white/10 rounded px-1 hover:bg-yellow-500/30 hover:text-yellow-400">S</button>
+                            </div>
+                        </div>
+                        <div class="flex-1 relative timeline-grid">
+                            <div class="audio-clip !bg-secondary/70" style="width:200px;left:0">Bass_Line.wav</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ WORKFLOW VIEW ═══════════════════ -->
+        <div id="view-workflow" class="view-section hidden absolute inset-0 flex flex-col p-6">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h2 class="text-2xl font-display font-bold">Workflow Builder</h2>
+                <div class="flex gap-2">
+                    <button onclick="clearWorkflow()" class="glass-light px-3 py-1.5 rounded-lg text-xs hover:bg-white/10">🗑 Vider</button>
+                    <button onclick="exportWorkflow()" class="btn-gradient px-3 py-1.5 rounded-lg text-xs">⬇ Exporter le workflow</button>
+                </div>
+            </div>
+            <div class="glass flex-1 rounded-2xl overflow-hidden" id="drawflow"></div>
+        </div>
+
+        <!-- ═══════════════════ AGENTS VIEW ═══════════════════ -->
+        <div id="view-agents" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-6xl mx-auto">
+                <h2 class="text-2xl font-display font-bold mb-6">Les 17 Agents en Temps Réel</h2>
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" id="agents-grid"></div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ TASKS VIEW ═══════════════════ -->
+        <div id="view-tasks" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-4xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-display font-bold">File de Tâches</h2>
+                    <button onclick="loadTasks()" class="glass-light px-3 py-2 rounded-lg text-xs hover:bg-white/10">🔄 Actualiser</button>
+                </div>
+                <div id="tasks-list" class="space-y-3">
+                    <div class="text-gray-400 text-sm">Chargement des tâches...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ SYSTEM VIEW ═══════════════════ -->
+        <div id="view-system" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-5xl mx-auto">
+                <h2 class="text-2xl font-display font-bold mb-6">Tableau de Bord Système</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="system-stats">
+                    <div class="glass rounded-2xl p-5 text-center">
+                        <div class="text-3xl font-bold text-primary mb-1" id="stat-gpu">–</div>
+                        <div class="text-xs text-gray-400">GPU</div>
+                    </div>
+                    <div class="glass rounded-2xl p-5 text-center">
+                        <div class="text-3xl font-bold text-secondary mb-1" id="stat-vram">–</div>
+                        <div class="text-xs text-gray-400">VRAM Libre</div>
+                    </div>
+                    <div class="glass rounded-2xl p-5 text-center">
+                        <div class="text-3xl font-bold text-green-400 mb-1" id="stat-ram">–</div>
+                        <div class="text-xs text-gray-400">RAM</div>
+                    </div>
+                    <div class="glass rounded-2xl p-5 text-center">
+                        <div class="text-3xl font-bold text-yellow-400 mb-1" id="stat-agents">17</div>
+                        <div class="text-xs text-gray-400">Agents actifs</div>
+                    </div>
+                </div>
+                <div class="glass rounded-2xl p-5 mb-4">
+                    <h3 class="font-medium mb-4 text-sm text-gray-300">Modèles chargés</h3>
+                    <div id="models-list" class="space-y-2 text-sm text-gray-400">Chargement...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════ MACRO VIEW ═══════════════════ -->
+        <div id="view-macros" class="view-section hidden absolute inset-0 overflow-y-auto p-6">
+            <div class="max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-display font-bold">Macro Board (100 Actions IA)</h2>
+                    <p class="text-sm text-gray-400">Clique sur un bouton pour l'envoyer au Chef Suprême</p>
+                </div>
+                <div id="macros-container" class="space-y-8 pb-10">
+                    <!-- Macros injectées par JS -->
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end flex-1 -->
+</main>
+
+<!-- ═══════════════════ AI MINI CHAT (Floating Mixer Assistant) ═══════════════════ -->
+<div id="ai-mini-chat" class="glass rounded-2xl shadow-2xl" style="display:none">
+    <div id="chat-header" class="flex items-center justify-between p-3 border-b border-border cursor-pointer" onclick="toggleMiniChat()">
+        <div class="flex items-center gap-2 text-sm font-medium">
+            <span class="text-primary animate-spin-slow">✨</span> Assistant Mixer IA
+        </div>
+        <button id="mini-chat-toggle" class="text-gray-400 hover:text-white text-xs">▼</button>
+    </div>
+    <div id="chat-body" class="flex flex-col" style="height:280px">
+        <div id="mini-history" class="flex-1 overflow-y-auto p-3 space-y-2 text-xs"></div>
+        <div class="p-2 border-t border-border flex gap-2">
+            <input type="text" id="mini-input" placeholder="boost bass track 2 par 3dB..." class="flex-1 bg-white/5 border border-border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-primary/50" onkeydown="if(event.key==='Enter')sendMiniChat()">
+            <button onclick="aiAutoMix()" class="text-xs glass-light px-2 py-1.5 rounded-lg hover:bg-white/10" title="Auto-Mix IA">✨</button>
+            <button onclick="sendMiniChat()" class="btn-gradient px-3 py-1.5 rounded-lg text-xs">→</button>
+        </div>
+    </div>
+</div>
+
+<!-- ADD TRACK MODAL -->
+<div id="add-track-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+    <div class="modal-box">
+        <h3 class="text-lg font-display font-bold mb-5">Ajouter une piste</h3>
+        <div class="grid grid-cols-2 gap-3 mb-5">
+            <button onclick="addTrackFromComputer()" class="glass-light p-4 rounded-xl text-sm hover:bg-white/10 text-left transition flex flex-col gap-2">
+                <span class="text-2xl">💻</span>
+                <span class="font-medium">Mon ordinateur</span>
+                <span class="text-xs text-gray-400">Importer un fichier WAV/MP3</span>
+            </button>
+            <button onclick="addTrackFromLibrary()" class="glass-light p-4 rounded-xl text-sm hover:bg-white/10 text-left transition flex flex-col gap-2">
+                <span class="text-2xl">📚</span>
+                <span class="font-medium">Bibliothèque</span>
+                <span class="text-xs text-gray-400">Choisir un son existant</span>
+            </button>
+            <button onclick="addTrackFromAI()" class="btn-gradient p-4 rounded-xl text-sm text-left transition flex flex-col gap-2">
+                <span class="text-2xl">🤖</span>
+                <span class="font-medium">Générer avec IA</span>
+                <span class="text-xs opacity-80">MusicGen · Describe your sound</span>
+            </button>
+            <button onclick="addTrackFromYouTube()" class="glass-light p-4 rounded-xl text-sm hover:bg-white/10 text-left transition flex flex-col gap-2">
+                <span class="text-2xl">📺</span>
+                <span class="font-medium">YouTube</span>
+                <span class="text-xs text-gray-400">Extraire l'audio d'une vidéo</span>
+            </button>
+        </div>
+        <button onclick="closeModal()" class="w-full glass-light py-2 rounded-xl text-sm hover:bg-white/10 transition">Annuler</button>
+        <input type="file" id="track-file-input" class="hidden" accept="audio/*" onchange="uploadTrackFile(event)">
+    </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  GLOBALS
+// ════════════════════════════════════════════════════════════
+let currentTab = 'chat';
+let sessionId = null;
+let uploadedAudioPath = null;
+let mixer = null;
+let editor = null;
+let masteringFilePath = null;
+let selectedLUFS = -14;
+let loopEnabled = false;
+let systemPollInterval = null;
+let tasksPollInterval = null;
+let allLibraryTracks = [];
+
+const agentsList = [
+    {id:1,name:"L'Orchestrateur",role:"Coordination"},
+    {id:2,name:"L'Analyste",role:"Détection BPM/Key"},
+    {id:3,name:"Le Chirurgien",role:"Séparation Stems"},
+    {id:4,name:"Le Compositeur",role:"Génération Instru"},
+    {id:5,name:"L'Arrangeur",role:"Structure Track"},
+    {id:6,name:"L'Ingénieur Son",role:"Mixage Pro"},
+    {id:7,name:"Ingénieur Mastering",role:"LUFS Standard"},
+    {id:8,name:"Le DJ Pro",role:"Transitions"},
+    {id:9,name:"L'Expert Vocal",role:"Processing Voix"},
+    {id:10,name:"Le Superviseur",role:"Qualité"},
+    {id:11,name:"Le Gardien",role:"Auto-Fix",active:true},
+    {id:12,name:"Compositeur Autonome",role:"Scraping & Génération"},
+    {id:13,name:"Chef Suprême",role:"Décision & Plan"},
+    {id:14,name:"Le Distributeur",role:"Publication"},
+    {id:15,name:"Le Transcripteur",role:"Audio → MIDI"},
+    {id:16,name:"L'Ingénieur VST",role:"Plugins Externes"},
+    {id:17,name:"Directeur Artistique",role:"Hit Potential"}
+];
+
+// ════════════════════════════════════════════════════════════
+//  TAB NAVIGATION
+// ════════════════════════════════════════════════════════════
+function switchTab(tabId) {
+    document.querySelectorAll('.view-section').forEach(el => {
+        el.classList.add('hidden');
+        el.classList.remove('flex', 'flex-col');
+    });
+    const view = document.getElementById('view-' + tabId);
+    if (!view) return;
+    view.classList.remove('hidden');
+    if (['chat','mixer','sequencer','workflow'].includes(tabId)) view.classList.add('flex','flex-col');
+
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const navBtn = document.getElementById('nav-' + tabId);
+    if (navBtn) navBtn.classList.add('active');
+
+    const titles = {
+        chat:'Chat & Production', mixer:'Studio Mixer', library:'Bibliothèque',
+        mastering:'Mastering', sequencer:'Séquenceur', workflow:'Workflow Builder',
+        agents:'Agents Live', tasks:'File de Tâches', system:'Système', macros:'Macro Board'
+    };
+    document.getElementById('page-title').textContent = titles[tabId] || tabId;
+    currentTab = tabId;
+
+    if (tabId === 'mixer') initMixer();
+    if (tabId === 'workflow') initWorkflow();
+    if (tabId === 'library') renderLibrary();
+    if (tabId === 'system') startSystemPoll();
+    else stopSystemPoll();
+    if (tabId === 'tasks') { loadTasks(); startTasksPoll(); } 
+    else stopTasksPoll();
+    if (tabId === 'macros') renderMacros();
+    if (tabId === 'mixer') document.getElementById('ai-mini-chat').style.display = 'block';
+    else document.getElementById('ai-mini-chat').style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════════════
+//  MACRO BOARD
+// ════════════════════════════════════════════════════════════
+const macroCategories = [
+    {
+        name: "🎤 Traitement Vocal",
+        color: "from-pink-500 to-rose-500",
+        macros: [
+            "Nettoie la voix (De-esser & Noise Gate)","Ajoute un Autotune subtil","Autotune robot T-Pain","Gros compresseur vocal in-your-face","Reverb Hall pour voix lead","Reverb Plate vintage","Delay à la croche synchronisé BPM","Slapback Delay rock/rockabilly","Chorus vocal large","Séparation stems : isole la voix","Génère des choeurs (harmonies)","Clonage vocal (voix de femme)","Clonage vocal (voix d'homme profond)","Baisse les sibilances","Sature légèrement la voix (saturation tape)","Coupe les basses fréquences de la voix (HPF 100Hz)","Ajoute un effet téléphone/radio (EQ)","Pitch la voix -1 octave (Chopped & Screwed)","Pitch la voix +1 octave (Chipmunk)","Aligne le timing de la voix sur le beat"
+        ]
+    },
+    {
+        name: "🥁 Beat & Rythmique",
+        color: "from-orange-500 to-amber-500",
+        macros: [
+            "Génère un kick trap lourd","Génère un snare hip-hop boom-bap","Génère un charley (hi-hat) rapide","Génère un 808 glissant","Analyse le BPM de ce beat","Sépare la batterie (Stem isolation)","Ajoute du swing à la rythmique","Pousse les basses du kick (+3dB à 60Hz)","Compresse le bus de batterie (Glue Compressor)","Génère une boucle de percussions latines","Génère un breakbeat jungle/drum&bass","Génère un beat house classique 120 BPM","Met la batterie en Mono","Élargit le charley en stéréo","Rend le kick plus percutant (Transient Shaper)","Génère un clap Lo-Fi","Ajoute une distorsion légère sur les drums","Mute la piste de batterie","Diviser la batterie en pistes (Kick, Snare, Hats)","Génère une transition de caisse claire (Snare roll)"
+        ]
+    },
+    {
+        name: "🎹 Instruments & Mélodie",
+        color: "from-emerald-500 to-teal-500",
+        macros: [
+            "Détecte les accords de la mélodie","Génère un piano mélancolique","Génère un synthé arpégié années 80","Génère une basse funk","Génère une guitare acoustique lo-fi","Extrait le fichier MIDI de ce piano","Ajoute un chorus sur le synthé","Met une grosse reverb sur le piano","Génère un pad atmosphérique (ambient)","Coupe les aigus de la basse (LPF)","Mets un flanger sur la guitare","Génère un solo de saxophone","Génère une section de cuivres (Brass)","Génère un synthé lead EDM perçant","Auto-pan sur le synthé (gauche/droite)","Renverse le sample (Reverse)","Baisse la mélodie de 3dB","Sépare les instruments (Stem separation)","Génère un effet riser pour la transition","Génère un drop dubstep massif"
+        ]
+    },
+    {
+        name: "🎚️ Mixage & Routage",
+        color: "from-blue-500 to-cyan-500",
+        macros: [
+            "Baisse toutes les pistes de 3dB (Headroom)","Fais un Auto-Mix IA global","Mute la Track 1","Solo la Track 2","Met le pan de la Track 3 à gauche","Met le pan de la Track 4 à droite","Crée un Bus Reverb","Envoie la Track 1 vers la Reverb","Compresseur Sidechain piste 2 sur Kick","Égalisation: enlève les boues (mud) à 250Hz","Égalisation: brillance "air" à 10kHz","Baisse la piste basse de 2dB","Augmente le volume vocal de 1.5dB","Bounce (fusionne) Track 1 et 2","Nettoie tout le mix (Auto-EQ)","Vérifie la compatibilité Mono","Met le master en sourdine (Mute Master)","Ajuste le gain staging","Sauvegarde l'état du mix actuel","Charge la dernière sauvegarde du mix"
+        ]
+    },
+    {
+        name: "💽 Mastering & Export",
+        color: "from-primary to-secondary",
+        macros: [
+            "Mastering Profil YouTube (-14 LUFS)","Mastering Profil Club (-6 LUFS)","Mastering Profil Vinyle (-10 LUFS)","Ajoute de la chaleur analogique au master","Élargissement stéréo du master (+20%)","Mastering mode Dynamique Conservée","Mastering mode Maximum Loudness","Exporte le mix en WAV","Exporte toutes les pistes séparées (Stems)","Analyse le LUFS actuel du master","Met un Limiteur brickwall à -1dB","Augmente le gain du Master de 2dB","Compresseur multibande sur le Master","Soft Clipper sur le master","Génère le projet FL Studio","Fais le plan d'action","Exécute le plan","Affiche les statistiques système","Vider le projet (Nouveau projet)","Enregistrer les stems dans la Bibliothèque"
+        ]
+    }
+];
+
+function renderMacros() {
+    const container = document.getElementById('macros-container');
+    if (container.children.length > 0) return; // already rendered
+    let html = '';
+    macroCategories.forEach(cat => {
+        html += `<div class="mb-6"><h3 class="text-lg font-bold mb-3 flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-gradient-to-r ${cat.color}"></span> ${cat.name}</h3>`;
+        html += `<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">`;
+        cat.macros.forEach(macro => {
+            html += `<button onclick="executeMacro(this.innerText)" class="glass-light p-3 rounded-xl text-xs text-left hover:bg-white/10 hover:border-primary/50 transition-all line-clamp-2 h-14 font-medium flex items-center shadow-sm hover:shadow-primary/20">${macro}</button>`;
+        });
+        html += `</div></div>`;
+    });
+    container.innerHTML = html;
+}
+
+function executeMacro(prompt) {
+    // 1. Switch to chat tab
+    switchTab('chat');
+    // 2. Put text in input
+    document.getElementById('chat-input').value = prompt;
+    // 3. Send automatically
+    sendChat();
+}
+
+// ════════════════════════════════════════════════════════════
+//  CHAT
+// ════════════════════════════════════════════════════════════
+let speechRecognition = null;
+function toggleSpeech() {
+    const btn = document.getElementById('mic-btn');
+    if (!('webkitSpeechRecognition' in window)) { alert("Navigateur non supporté pour la reconnaissance vocale."); return; }
+    if (btn.classList.contains('mic-active')) { if(speechRecognition) speechRecognition.stop(); btn.classList.remove('mic-active'); return; }
+    speechRecognition = new webkitSpeechRecognition();
+    speechRecognition.lang = 'fr-FR';
+    speechRecognition.interimResults = false;
+    speechRecognition.onstart = () => btn.classList.add('mic-active');
+    speechRecognition.onresult = e => { document.getElementById('chat-input').value = e.results[0][0].transcript; };
+    speechRecognition.onend = () => btn.classList.remove('mic-active');
+    speechRecognition.start();
+}
+
+async function handleFileUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    appendChatBubble('user', `📎 Upload de "${file.name}"...`, 'opacity-50 upload-pending');
+    try {
+        const res = await fetch('/api/audio/upload-source', { method:'POST', body:formData });
+        const data = await res.json();
+        if (data.status === 'success') {
+            uploadedAudioPath = data.audio_path;
+            document.querySelector('.upload-pending').textContent = `📎 Prêt : ${file.name}`;
+            document.querySelector('.upload-pending').classList.remove('opacity-50', 'upload-pending');
+        }
+    } catch(e) { document.querySelector('.upload-pending').textContent = `❌ Erreur upload`; }
+}
+
+function appendChatBubble(role, html, extraClass = '') {
+    const history = document.getElementById('chat-history');
+    const div = document.createElement('div');
+    div.className = (role === 'user' ? 'chat-bubble-user ml-auto' : 'chat-bubble-ai') + ` p-4 max-w-[85%] text-sm ${extraClass}`;
+    if (role === 'assistant') {
+        div.innerHTML = `<p class="font-medium text-primary text-xs mb-2">Chef Suprême</p><div>${html}</div>`;
+    } else {
+        div.textContent = html;
+    }
+    history.appendChild(div);
+    history.scrollTop = history.scrollHeight;
+    return div;
+}
+
+async function sendChat() {
+    const input = document.getElementById('chat-input');
+    const val = input.value.trim();
+    if (!val && !uploadedAudioPath) return;
+
+    if (val) appendChatBubble('user', val);
+    input.value = '';
+
+    const thinkingDiv = appendChatBubble('assistant', `<span class="animate-spin inline-block mr-2">⚙️</span> En train de réfléchir...`);
+
+    try {
+        const payload = { message: val || "Voici un fichier audio.", session_id: sessionId };
+        if (uploadedAudioPath) { payload.audio_path = uploadedAudioPath; uploadedAudioPath = null; }
+
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.session_id) sessionId = data.session_id;
+
+        const reply = (data.reply || '').replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/`(.*?)`/g,'<code class="bg-white/10 px-1 rounded text-xs">$1</code>');
+        thinkingDiv.querySelector('div').innerHTML = reply;
+
+        // Plan badge
+        if (data.plan && data.plan.steps) {
+            const badge = document.getElementById('plan-badge');
+            badge.classList.remove('hidden');
+            document.getElementById('plan-steps-count').textContent = `${data.plan.steps.length} étapes`;
+            window._currentPlan = data.plan;
+        }
+
+        // Status indicator
+        const statusColors = { plan_created:'text-yellow-400', executing:'text-blue-400', analysis_complete:'text-green-400', plan_updated:'text-orange-400' };
+        if (data.status && statusColors[data.status]) {
+            document.getElementById('task-status').innerHTML = `<span class="${statusColors[data.status]}">${data.status.replace('_',' ')}</span>`;
+        }
+    } catch(e) {
+        thinkingDiv.querySelector('div').innerHTML = `<span class="text-red-400">Erreur de connexion au serveur.</span>`;
+    }
+}
+
+function showCurrentPlan() {
+    if (!window._currentPlan) return;
+    const plan = window._currentPlan;
+    let html = `<h3 class="font-bold mb-3">📋 Plan : ${plan.conversation_summary || 'Plan de production'}</h3><ul class="space-y-2">`;
+    (plan.steps || []).forEach(step => {
+        const icon = step.status === 'completed' ? '✅' : step.status === 'processing' ? '🔄' : '⏳';
+        html += `<li class="flex gap-2 text-sm"><span>${icon}</span><span>Étape ${step.step}: ${step.action} (${step.agent})</span></li>`;
+    });
+    html += `</ul><div class="mt-4 flex gap-2"><button onclick="sendChat()" class="btn-gradient px-4 py-2 rounded-lg text-xs">Exécuter</button></div>`;
+    appendChatBubble('assistant', html);
+}
+
+// ════════════════════════════════════════════════════════════
+//  MIXER ENGINE
+// ════════════════════════════════════════════════════════════
+async function initMixer() {
+    if (mixer) return;
+    if (typeof MixerEngine === 'undefined') {
+        // Fallback: init a minimal UI without engine
+        buildMixerUI([]);
+        return;
+    }
+    mixer = new MixerEngine(8);
+    await mixer.init();
+    mixer.onLevelUpdate = (slot, level) => updateVU(slot, level);
+    mixer.onMasterLevel = (L, R) => updateMasterVU(L, R);
+    mixer.onTimeUpdate = (pos) => updateTransportPos(pos);
+    buildMixerUI([]);
+
+    // Load existing project tracks
+    try {
+        const res = await fetch('/api/project/tracks');
+        const data = await res.json();
+        if (data.tracks) {
+            Object.entries(data.tracks).forEach(([slot, track]) => {
+                if (track.stream_url) mixer.loadTrack(parseInt(slot), track.stream_url, track.name);
+            });
+        }
+    } catch(e) {}
+}
+
+function buildMixerUI(tracks) {
+    const console_ = document.getElementById('mixer-console');
+    console_.innerHTML = '';
+    
+    for (let i = 1; i <= 8; i++) {
+        const strip = document.createElement('div');
+        strip.className = 'channel-strip';
+        strip.id = `strip-${i}`;
+        strip.innerHTML = `
+            <div class="text-xs text-gray-400 mb-1 font-mono">CH${i}</div>
+            <canvas id="vu-${i}" class="vu-canvas" width="18" height="80"></canvas>
+            <div class="fader-wrap">
+                <input type="range" class="fader" id="fader-${i}" min="-60" max="12" value="0" step="0.5"
+                    oninput="onFaderChange(${i},this.value)" style="height:100px">
+                <span id="vol-label-${i}" class="text-[10px] text-gray-400 font-mono">0dB</span>
+            </div>
+            <div style="position:relative;width:36px;height:36px;margin:4px auto">
+                <canvas id="pan-knob-${i}" width="36" height="36" class="cursor-pointer" title="Pan"></canvas>
+            </div>
+            <div class="flex gap-1">
+                <button id="mute-${i}" onclick="toggleMute(${i})" class="text-[9px] px-1.5 py-0.5 rounded bg-white/10 hover:bg-red-500/30 transition" title="Mute">M</button>
+                <button id="solo-${i}" onclick="toggleSolo(${i})" class="text-[9px] px-1.5 py-0.5 rounded bg-white/10 hover:bg-yellow-500/30 transition" title="Solo">S</button>
+            </div>
+            <div class="text-[9px] text-gray-500 mt-1 flex flex-col gap-1 w-full">
+                <label>L<input type="range" class="w-full" min="-12" max="12" value="0" step="1" oninput="onEQ(${i},'low',+this.value)"></label>
+                <label>M<input type="range" class="w-full" min="-12" max="12" value="0" step="1" oninput="onEQ(${i},'mid',+this.value)"></label>
+                <label>H<input type="range" class="w-full" min="-12" max="12" value="0" step="1" oninput="onEQ(${i},'high',+this.value)"></label>
+            </div>
+            <div class="text-[9px] text-gray-400 mt-1 text-center truncate max-w-[62px]" id="track-name-${i}">Track ${i}</div>
+        `;
+        console_.appendChild(strip);
+        drawPanKnob(i, 0);
+    }
+
+    // Master strip
+    const master = document.createElement('div');
+    master.className = 'channel-strip border-l-2 border-primary/30 ml-2';
+    master.innerHTML = `
+        <div class="text-xs text-primary mb-1 font-mono font-bold">MASTER</div>
+        <div class="flex gap-1">
+            <canvas id="vu-master-L" class="vu-canvas" width="10" height="80"></canvas>
+            <canvas id="vu-master-R" class="vu-canvas" width="10" height="80"></canvas>
+        </div>
+        <div class="fader-wrap">
+            <input type="range" class="fader" id="master-fader" min="-60" max="6" value="-3" step="0.5"
+                oninput="onMasterFader(this.value)" style="height:100px">
+            <span id="master-vol-label" class="text-[10px] text-gray-400 font-mono">-3dB</span>
+        </div>
+        <div class="text-[9px] text-gray-400 mt-2">COMP</div>
+        <input type="range" class="w-12" min="-40" max="0" value="-18" step="1" oninput="onCompressor(+this.value)" title="Compressor Threshold">
+        <div class="text-[9px] text-gray-400 mt-1">LIMIT</div>
+        <input type="range" class="w-12" min="-12" max="0" value="-1" step="0.5" oninput="onLimiter(+this.value)" title="Limiter Threshold">
+    `;
+    console_.appendChild(master);
+}
+
+function drawPanKnob(slot, value) {
+    const canvas = document.getElementById(`pan-knob-${slot}`);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 36, 36);
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(18, 18, 13, 0.75*Math.PI, 2.25*Math.PI);
+    ctx.stroke();
+    const angle = 0.75*Math.PI + (value + 1) / 2 * 1.5 * Math.PI;
+    const grad = ctx.createLinearGradient(0,0,36,0);
+    grad.addColorStop(0,'#8B5CF6'); grad.addColorStop(1,'#06B6D4');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(18, 18, 13, 0.75*Math.PI, angle);
+    ctx.stroke();
+    // center dot
+    ctx.fillStyle = 'white';
+    ctx.beginPath();
+    ctx.arc(18 + 13*Math.cos(angle), 18 + 13*Math.sin(angle), 3, 0, 2*Math.PI);
+    ctx.fill();
+}
+
+function drawVU(canvasId, level, vertical = true) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const bars = 20;
+    const barH = (h - bars) / bars;
+    const filled = Math.min(bars, Math.floor(level * bars * 2));
+    for (let i = 0; i < bars; i++) {
+        const y = h - (i + 1) * (barH + 1);
+        const isFilled = i < filled;
+        ctx.fillStyle = i < bars * 0.65 ? (isFilled ? '#22c55e' : 'rgba(34,197,94,0.1)') :
+                        i < bars * 0.85 ? (isFilled ? '#eab308' : 'rgba(234,179,8,0.1)') :
+                                          (isFilled ? '#ef4444' : 'rgba(239,68,68,0.1)');
+        ctx.fillRect(0, y, w, barH);
+    }
+}
+
+function updateVU(slot, level) { drawVU(`vu-${slot}`, level); }
+function updateMasterVU(L, R) { drawVU('vu-master-L', L); drawVU('vu-master-R', R); }
+
+function updateTransportPos(pos) {
+    const m = Math.floor(pos / 60), s = Math.floor(pos % 60), ms = Math.floor((pos % 1) * 1000);
+    document.getElementById('transport-pos').textContent = `${m}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`;
+    // playhead
+    const maxDuration = 120;
+    document.getElementById('playhead-bar').style.left = `${Math.min(100, (pos / maxDuration) * 100)}%`;
+}
+
+function onFaderChange(slot, val) {
+    document.getElementById(`vol-label-${slot}`).textContent = `${parseFloat(val) >= 0 ? '+' : ''}${parseFloat(val).toFixed(0)}dB`;
+    if (mixer) mixer.setVolume(slot, parseFloat(val));
+}
+
+function onMasterFader(val) {
+    document.getElementById('master-vol-label').textContent = `${parseFloat(val) >= 0 ? '+' : ''}${parseFloat(val).toFixed(0)}dB`;
+    if (mixer) mixer.setMasterVolume(parseFloat(val));
+}
+
+function toggleMute(slot) {
+    const btn = document.getElementById(`mute-${slot}`);
+    const isMuted = btn.classList.contains('!bg-red-500/50');
+    btn.classList.toggle('!bg-red-500/50', !isMuted);
+    btn.classList.toggle('text-red-400', !isMuted);
+    if (mixer) mixer.setMute(slot, !isMuted);
+}
+
+function toggleSolo(slot) {
+    const btn = document.getElementById(`solo-${slot}`);
+    const isSoloed = btn.classList.contains('!bg-yellow-500/50');
+    btn.classList.toggle('!bg-yellow-500/50', !isSoloed);
+    btn.classList.toggle('text-yellow-400', !isSoloed);
+    if (mixer) mixer.setSolo(slot, !isSoloed);
+}
+
+function onEQ(slot, band, val) { if (mixer) mixer.setEQ(slot, band === 'low' ? val : mixer.tracks[slot]?.eqLow?.gain?.value || 0, band === 'mid' ? val : mixer.tracks[slot]?.eqMid?.gain?.value || 0, band === 'high' ? val : mixer.tracks[slot]?.eqHigh?.gain?.value || 0); }
+
+function onCompressor(val) { if (mixer) mixer.setCompressor(val, 3, 0.003, 0.1); }
+function onLimiter(val) { if (mixer) mixer.setLimiter(val); }
+
+function mixerPlay() { 
+    if (mixer) { mixer.play(); document.getElementById('btn-play').classList.add('!bg-primary/30'); }
+}
+function mixerPause() { if (mixer) { mixer.pause(); document.getElementById('btn-play').classList.remove('!bg-primary/30'); } }
+function mixerStop() { if (mixer) { mixer.stop(); document.getElementById('btn-play').classList.remove('!bg-primary/30'); updateTransportPos(0); } }
+function toggleLoop() { 
+    loopEnabled = !loopEnabled;
+    document.getElementById('btn-loop').classList.toggle('!bg-primary/30', loopEnabled);
+    document.getElementById('btn-loop').classList.toggle('opacity-50', !loopEnabled);
+    if (mixer) { mixer.loopEnabled = loopEnabled; }
+}
+function updateBPM(val) { if (mixer) mixer.bpm = parseInt(val); }
+
+async function exportMix() {
+    if (!mixer) return;
+    const maxDur = Math.max(...Object.values(mixer.tracks).map(t => t.buffer?.duration || 0));
+    if (!maxDur) { alert("Aucune piste chargée dans le mixer."); return; }
+    document.getElementById('task-status').textContent = "Export en cours...";
+    const blob = await mixer.exportMix(maxDur);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `studio-ia-mix-${Date.now()}.wav`; a.click();
+    URL.revokeObjectURL(url);
+    document.getElementById('task-status').textContent = "Prêt";
+}
+
+// Add Track
+function openAddTrackModal() { document.getElementById('add-track-modal').classList.remove('hidden'); }
+function closeModal() { document.getElementById('add-track-modal').classList.add('hidden'); }
+
+function addTrackFromComputer() { document.getElementById('track-file-input').click(); closeModal(); }
+
+async function uploadTrackFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('project_id', 'default');
+    if (file.name) formData.append('name', file.name);
+    try {
+        const res = await fetch('/api/project/tracks/add', { method:'POST', body:formData });
+        const data = await res.json();
+        if (data.status === 'success' && mixer && data.track.stream_url) {
+            const result = await mixer.loadTrack(data.slot, data.track.stream_url, data.track.name);
+            const nameEl = document.getElementById(`track-name-${data.slot}`);
+            if (nameEl) nameEl.textContent = data.track.name.substring(0, 10);
+            drawWaveformForSlot(data.slot);
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function addTrackFromLibrary() {
+    closeModal();
+    switchTab('library');
+}
+
+async function addTrackFromAI() {
+    closeModal();
+    const prompt = window.prompt("Décrivez le son à générer (ex: heavy 808 bass trap 140bpm):");
+    if (!prompt) return;
+    const res = await fetch('/api/generate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt, duration:30}) });
+    const data = await res.json();
+    appendChatBubble('assistant', `🎵 Génération IA lancée ! Task ID: ${data.task_id}`);
+}
+
+async function addTrackFromYouTube() {
+    closeModal();
+    const url = window.prompt("URL YouTube :");
+    if (!url) return;
+    const res = await fetch('/api/youtube', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url}) });
+    const data = await res.json();
+    if (data.status === 'success') {
+        appendChatBubble('assistant', `📺 Audio extrait ! Fichier: ${data.file_path}`);
+    }
+}
+
+function drawWaveformForSlot(slot) {
+    if (!mixer || !mixer.tracks[slot]?.waveformData) return;
+    const peaks = mixer.tracks[slot].waveformData;
+    const trackId = `timeline-track-${slot}`;
+    let existing = document.getElementById(trackId);
+    if (!existing) {
+        const container = document.getElementById('timeline-tracks');
+        existing = document.createElement('canvas');
+        existing.id = trackId;
+        existing.style.cssText = `position:absolute;top:${(slot-1)*20}px;left:0;width:100%;height:18px;`;
+        container.appendChild(existing);
+    }
+}
+
+// AI Auto-Mix
+async function aiAutoMix() {
+    try {
+        const res = await fetch('/api/ai/auto-mix', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({project_id:'default'}) });
+        const data = await res.json();
+        if (data.commands && mixer) {
+            data.commands.forEach(cmd => {
+                mixer.applyDirective(cmd);
+                // Animate faders
+                if (cmd.action === 'set_volume') {
+                    const fader = document.getElementById(`fader-${cmd.track}`);
+                    if (fader) { fader.value = cmd.value; document.getElementById(`vol-label-${cmd.track}`).textContent = `${cmd.value}dB`; }
+                }
+            });
+        }
+        addMiniMsg('ai', data.reply || 'Auto-mix appliqué !');
+    } catch(e) { addMiniMsg('ai', '❌ Erreur Auto-Mix'); }
+}
+
+// Mini chat
+let miniChatCollapsed = false;
+function toggleMiniChat() {
+    miniChatCollapsed = !miniChatCollapsed;
+    const chat = document.getElementById('ai-mini-chat');
+    chat.classList.toggle('collapsed', miniChatCollapsed);
+    document.getElementById('mini-chat-toggle').textContent = miniChatCollapsed ? '▲' : '▼';
+}
+
+function addMiniMsg(role, text) {
+    const hist = document.getElementById('mini-history');
+    const div = document.createElement('div');
+    div.className = `p-2 rounded-lg text-xs mb-1 ${role === 'user' ? 'bg-primary/20 text-right' : 'bg-white/5'}`;
+    div.textContent = text;
+    hist.appendChild(div);
+    hist.scrollTop = hist.scrollHeight;
+}
+
+async function sendMiniChat() {
+    const input = document.getElementById('mini-input');
+    const val = input.value.trim();
+    if (!val) return;
+    addMiniMsg('user', val);
+    input.value = '';
+    try {
+        const res = await fetch('/api/ai/realtime-directive', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({directive: val, project_id:'default'})
+        });
+        const data = await res.json();
+        if (data.commands && mixer) {
+            data.commands.forEach(cmd => {
+                mixer.applyDirective(cmd);
+                if (cmd.action === 'set_volume') {
+                    const f = document.getElementById(`fader-${cmd.track}`);
+                    if (f) { f.value = cmd.value; document.getElementById(`vol-label-${cmd.track}`).textContent = `${cmd.value}dB`; }
+                }
+                if (cmd.action === 'set_pan') drawPanKnob(cmd.track, cmd.value);
+            });
+        }
+        addMiniMsg('ai', data.reply || 'Directive appliquée !');
+    } catch(e) { addMiniMsg('ai', '❌ Erreur serveur'); }
+}
+
+// ════════════════════════════════════════════════════════════
+//  LIBRARY
+// ════════════════════════════════════════════════════════════
+async function renderLibrary() {
+    const grid = document.getElementById('library-grid');
+    grid.innerHTML = '<div class="text-gray-400 text-sm col-span-3">Chargement...</div>';
+    try {
+        const res = await fetch('/api/library');
+        const data = await res.json();
+        allLibraryTracks = data.tracks || [];
+        renderLibraryTracks(allLibraryTracks);
+    } catch(e) { grid.innerHTML = '<div class="text-red-400 text-sm">Erreur de chargement</div>'; }
+}
+
+function renderLibraryTracks(tracks) {
+    const grid = document.getElementById('library-grid');
+    if (!tracks.length) { grid.innerHTML = '<div class="text-gray-400 text-sm col-span-3">Bibliothèque vide. Ajoutez des sons ou demandez au Chef Suprême d\'en générer.</div>'; return; }
+    grid.innerHTML = '';
+    tracks.forEach(track => {
+        const div = document.createElement('div');
+        div.className = 'glass-light p-4 rounded-2xl flex flex-col gap-3 hover:border-primary/30 border border-transparent transition';
+        div.innerHTML = `
+            <div class="flex justify-between items-start">
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-medium text-sm truncate">${track.filename}</h3>
+                    <p class="text-xs text-gray-400">${track.source}</p>
+                </div>
+                <span class="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded ml-2 shrink-0">${track.genre || 'Audio'}</span>
+            </div>
+            <audio controls src="/api/library/stream/${encodeURIComponent(track.filename)}" style="width:100%;height:28px;"></audio>
+            <div class="flex gap-2 text-xs">
+                <button onclick="addToMixer('${track.filename}')" class="flex-1 glass-light py-1.5 rounded-lg hover:bg-white/10 transition">🎚 Mixer</button>
+                <a href="/api/library/stream/${encodeURIComponent(track.filename)}" download="${track.filename}" class="flex-1 glass-light py-1.5 rounded-lg hover:bg-white/10 transition text-center">⬇ DL</a>
+            </div>
+        `;
+        grid.appendChild(div);
+    });
+}
+
+function filterLibrary(query) {
+    if (!query) { renderLibraryTracks(allLibraryTracks); return; }
+    const q = query.toLowerCase();
+    renderLibraryTracks(allLibraryTracks.filter(t => t.filename.toLowerCase().includes(q) || (t.source || '').toLowerCase().includes(q)));
+}
+
+async function addToMixer(filename) {
+    switchTab('mixer');
+    await new Promise(r => setTimeout(r, 500)); // wait for mixer init
+    const streamUrl = `/api/library/stream/${encodeURIComponent(filename)}`;
+    const formData = new FormData();
+    formData.append('project_id', 'default');
+    formData.append('name', filename);
+    // We need to provide audio_path, so we'll load via stream_url directly
+    if (mixer) {
+        const freeSlot = Object.keys(mixer.tracks).find(s => !mixer.tracks[s].buffer) || 1;
+        await mixer.loadTrack(parseInt(freeSlot), streamUrl, filename);
+        const nameEl = document.getElementById(`track-name-${freeSlot}`);
+        if (nameEl) nameEl.textContent = filename.substring(0, 10);
+    }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MASTERING
+// ════════════════════════════════════════════════════════════
+function handleMasteringUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    document.getElementById('mastering-file-name').textContent = file.name;
+    // Upload to server first
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/audio/upload-source', {method:'POST', body:formData})
+        .then(r => r.json())
+        .then(d => { if (d.status==='success') masteringFilePath = d.audio_path; });
+}
+
+function selectLUFS(btn, lufs) {
+    document.querySelectorAll('.lufs-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedLUFS = lufs;
+}
+
+async function launchMastering() {
+    if (!masteringFilePath) { alert("Veuillez uploader un fichier audio."); return; }
+    const creative = document.getElementById('opt-creative').checked;
+    const payload = { audio_path: masteringFilePath, creative, enhance_vocals: document.getElementById('opt-vocal').checked, add_warmth: document.getElementById('opt-warmth').checked, stereo_width: document.getElementById('opt-stereo').checked ? 1.3 : 1.0 };
+    const resultDiv = document.getElementById('mastering-result');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = '<span class="animate-spin inline-block">⚙️</span> Mastering en cours...';
+    try {
+        const res = await fetch('/api/mastering/youtube', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const data = await res.json();
+        if (data.status === 'success') {
+            resultDiv.innerHTML = `✅ <strong>Mastering terminé !</strong><br>LUFS: ${data.target_lufs} | True Peak: ${data.true_peak} dBTP<br><a href="/api/audio/file?path=${encodeURIComponent(data.output_path)}" class="text-primary hover:underline" download>⬇ Télécharger le master</a>`;
+        } else { resultDiv.innerHTML = `❌ Erreur: ${data.detail || 'Inconnu'}`; }
+    } catch(e) { resultDiv.innerHTML = `❌ Erreur: ${e.message}`; }
+}
+
+// ════════════════════════════════════════════════════════════
+//  WORKFLOW BUILDER
+// ════════════════════════════════════════════════════════════
+function initWorkflow() {
+    if (editor) return;
+    const container = document.getElementById("drawflow");
+    editor = new Drawflow(container);
+    editor.reroute = true;
+    editor.start();
+    const agents = [{id:12,label:'Agent 12\n(Scraper)'},{id:3,label:'Agent 3\n(Séparation)'},{id:15,label:'Agent 15\n(MIDI)'},{id:6,label:'Agent 6\n(Mix)'},{id:7,label:'Agent 7\n(Master)'}];
+    let x = 80;
+    const nodeIds = agents.map((a, idx) => {
+        const id = editor.addNode(a.label, idx===0?0:1, idx===agents.length-1?0:1, x, 150, 'agent', {}, a.label);
+        x += 180;
+        return id;
+    });
+    for (let i = 0; i < nodeIds.length - 1; i++) editor.addConnection(nodeIds[i], nodeIds[i+1], 'output_1', 'input_1');
+}
+
+function clearWorkflow() { if (editor) { editor.clear(); initWorkflow(); } }
+function exportWorkflow() {
+    if (!editor) return;
+    const data = editor.export();
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'workflow.json'; a.click();
+}
+
+// ════════════════════════════════════════════════════════════
+//  AGENTS
+// ════════════════════════════════════════════════════════════
+function initAgents() {
+    const grid = document.getElementById('agents-grid');
+    grid.innerHTML = '';
+    agentsList.forEach(a => {
+        const div = document.createElement('div');
+        div.className = 'glass-light p-4 rounded-2xl flex flex-col gap-2';
+        div.innerHTML = `
+            <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-400 font-mono">Agent ${a.id}</span>
+                <div class="w-2 h-2 rounded-full ${a.active ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}"></div>
+            </div>
+            <div class="font-medium text-sm text-white">${a.name}</div>
+            <div class="text-xs text-primary">${a.role}</div>
+        `;
+        grid.appendChild(div);
+    });
+}
+
+// ════════════════════════════════════════════════════════════
+//  TASKS
+// ════════════════════════════════════════════════════════════
+async function loadTasks() {
+    const list = document.getElementById('tasks-list');
+    try {
+        const res = await fetch('/api/tasks/list');
+        const data = await res.json();
+        if (!data.tasks || !data.tasks.length) { list.innerHTML = '<div class="text-gray-400 text-sm">Aucune tâche trouvée.</div>'; return; }
+        list.innerHTML = '';
+        data.tasks.forEach(task => {
+            const colors = {completed:'bg-green-500', failed:'bg-red-500', running:'bg-blue-500', pending:'bg-gray-500'};
+            const icons = {completed:'✅', failed:'❌', running:'🔄', pending:'⏳'};
+            const div = document.createElement('div');
+            div.className = 'glass-light p-4 rounded-xl';
+            div.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span>${icons[task.status]||'⏳'}</span>
+                        <span class="font-mono text-xs text-gray-400">${task.id.substring(0,12)}...</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-white/10">${task.type}</span>
+                    </div>
+                    <div class="flex gap-2 text-xs">
+                        ${task.download_url ? `<a href="${task.download_url}" class="text-primary hover:underline">⬇ Télécharger</a>` : ''}
+                        <span class="text-gray-400">${task.completed_at ? new Date(task.completed_at).toLocaleTimeString() : ''}</span>
+                    </div>
+                </div>
+                <div class="task-bar">
+                    <div class="task-bar-fill ${colors[task.status]||'bg-gray-500'}" style="width:${task.progress||0}%"></div>
+                </div>
+                ${task.error ? `<div class="mt-2 text-xs text-red-400 font-mono truncate">${task.error}</div>` : ''}
+            `;
+            list.appendChild(div);
+        });
+    } catch(e) { list.innerHTML = '<div class="text-red-400 text-sm">Erreur de chargement des tâches.</div>'; }
+}
+
+function startTasksPoll() { if (!tasksPollInterval) tasksPollInterval = setInterval(loadTasks, 5000); }
+function stopTasksPoll() { if (tasksPollInterval) { clearInterval(tasksPollInterval); tasksPollInterval = null; } }
+
+// ════════════════════════════════════════════════════════════
+//  SYSTEM
+// ════════════════════════════════════════════════════════════
+async function loadSystem() {
+    try {
+        const res = await fetch('/api/status/system');
+        const data = await res.json();
+        const hw = data.hardware || {};
+        document.getElementById('stat-gpu').textContent = (hw.device || 'N/A').replace('NVIDIA GeForce ','');
+        document.getElementById('stat-vram').textContent = hw.free_gb ? `${hw.free_gb.toFixed(1)}GB` : 'N/A';
+        document.getElementById('stat-ram').textContent = hw.device ? 'OK' : 'N/A';
+        const modelsEl = document.getElementById('models-list');
+        if (data.models) {
+            modelsEl.innerHTML = Object.entries(data.models).map(([name, info]) => `
+                <div class="flex items-center justify-between py-2 border-b border-border">
+                    <span>${name}</span>
+                    <span class="text-xs ${info.loaded ? 'text-green-400':'text-gray-500'}">${info.loaded ? 'Chargé':'Disponible'}</span>
+                </div>
+            `).join('') || '<div class="text-gray-400">Aucun modèle chargé</div>';
+        }
+    } catch(e) {}
+}
+
+function startSystemPoll() { loadSystem(); if (!systemPollInterval) systemPollInterval = setInterval(loadSystem, 5000); }
+function stopSystemPoll() { if (systemPollInterval) { clearInterval(systemPollInterval); systemPollInterval = null; } }
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+window.onload = () => {
+    initAgents();
+    renderLibrary();
+    // Make views work immediately
+    document.getElementById('view-chat').classList.add('flex', 'flex-col');
+};
+// ════════════════════════════════════════════════════════════
+//  DRAG & DROP & KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════
+document.body.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    if (currentTab === 'mixer' || currentTab === 'sequencer') {
+        e.dataTransfer.dropEffect = 'copy';
+    }
+});
+
+document.body.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    if (currentTab !== 'mixer' && currentTab !== 'sequencer') return;
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('audio/')) return;
+    
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+        const res = await fetch('/api/audio/upload-source', { method:'POST', body:formData });
+        const data = await res.json();
+        if (data.status === 'success' && mixer) {
+            let targetSlot = 1;
+            for (let i=1; i<=8; i++) {
+                if (!mixer.tracks[i].buffer) { targetSlot = i; break; }
+            }
+            mixer.loadTrack(targetSlot, data.audio_path, file.name);
+            console.log(`[DragDrop] Loaded ${file.name} to slot ${targetSlot}`);
+        }
+    } catch(err) {
+        console.error("Drop upload failed:", err);
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    
+    if (e.code === 'Space') {
+        e.preventDefault();
+        if (typeof mixerPlay === 'function' && typeof mixerPause === 'function') {
+            if (mixer && mixer.isPlaying) mixerPause(); else mixerPlay();
+        }
+    }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER=redis://redis:6379/1
+      - CELERY_BACKEND=redis://redis:6379/2
+      - STUDIO_WORKSPACE=/workspace
+      - FL_WATCH_FOLDER=/workspace/FL_Studio_Ingestion
+      - FL_OUTPUT_FOLDER=/workspace/FL_Studio_Output
+      - MAX_VRAM_GB=24
+      - USE_4BIT=true
+    volumes:
+      - ../models_cache:/app/models_cache
+      - workspace:/workspace
+      - ../fl_studio_integration:/app/fl_studio_integration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - redis
+
+  celery_worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 --pool=solo
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER=redis://redis:6379/1
+      - CELERY_BACKEND=redis://redis:6379/2
+    volumes:
+      - ../models_cache:/app/models_cache
+      - workspace:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  watch_folder_monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    command: python -c "import asyncio; from utils.fl_studio_bridge import FLStudioBridge; bridge = FLStudioBridge(); asyncio.run(bridge.watch_for_new_files(lambda p: print(f'New file: {p}')))"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
+  workspace:
